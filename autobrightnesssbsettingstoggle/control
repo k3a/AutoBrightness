@@ -1,0 +1,9 @@
+Package: me.k3a.ab.toggle
+Name: AutoBrightness SBSettings Toggle
+Depends: sbsettings
+Version: 0.0.1
+Architecture: iphoneos-arm
+Description: SBSettings toggle for AutoBrightness
+Maintainer: K3A
+Author: K3A
+Section: Addons (SBSettings)

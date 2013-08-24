@@ -1,0 +1,6 @@
+#!/bin/bash
+
+echo "Restarting/loading daemon..."
+killall ambid || true
+chown 0:0 /System/Library/LaunchDaemons/me.k3a.ambid.plist
+launchctl load -w /System/Library/LaunchDaemons/me.k3a.ambid.plist || true
