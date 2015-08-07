@@ -11,8 +11,9 @@
 static int (*SBSSpringBoardServerPort)() = 0;
 static void (*SBSetCurrentBacklightLevel)(int _port, float level) = 0;
 
-static int (*BKSDisplayServicesServerPort)() = 0;
-static void (*BKSDisplayBrightnessSet)(int port, float value) = 0;
+typedef struct BKSDisplayBrightnessTransaction *BKSDisplayBrightnessTransactionRef;
+static BKSDisplayBrightnessTransactionRef (*BKSDisplayBrightnessTransactionCreate)(CFAllocatorRef allocator) = 0;
+static void (*BKSDisplayBrightnessSet)(float value) = 0;
 
 IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
 int IOHIDEventSystemClientSetMatching(IOHIDEventSystemClientRef client, CFDictionaryRef match);
@@ -35,7 +36,7 @@ static void setBrightness(float br, bool skipDeltaCheck)
 	float diff = fabsf(s_lastBr-br);
 	if (skipDeltaCheck || diff > thres)
 	{
-		int port = useBackBoardServices ? BKSDisplayServicesServerPort() : SBSSpringBoardServerPort();
+		int port = useBackBoardServices ? 1 : SBSSpringBoardServerPort();
 		int numSteps = diff/0.002f; // how big a step will be
 		if (numSteps == 0) 
 			numSteps = 1;
@@ -47,13 +48,23 @@ static void setBrightness(float br, bool skipDeltaCheck)
 #endif
 
 		float step = (br-s_lastBr)/numSteps;
-		for (int i=1; i<=numSteps; i++)
+		if (useBackBoardServices)
 		{
-			if (useBackBoardServices)
-				BKSDisplayBrightnessSet( port, s_lastBr + step*i);
-			else
+			BKSDisplayBrightnessTransactionRef transaction = BKSDisplayBrightnessTransactionCreate(kCFAllocatorDefault);
+			for (int i=1; i<=numSteps; i++)
+			{
+				BKSDisplayBrightnessSet(s_lastBr + step*i);
+				usleep(500000.0f/numSteps);
+			}
+			CFRelease(transaction);
+		}
+		else
+		{
+			for (int i=1; i<=numSteps; i++)
+			{
 				SBSetCurrentBacklightLevel( port, s_lastBr + step*i);
-			usleep(500000.0f/numSteps);
+				usleep(500000.0f/numSteps);
+			}
 		}
 		s_lastBr = br;
 		//NSLog(@"BR: %f (SET)", br);
@@ -169,14 +180,14 @@ int main()
 			return 1;
 		}
 
-		BKSDisplayServicesServerPort = (int (*)())dlsym(backBoardServices, "BKSDisplayServicesServerPort");
-		if (!BKSDisplayServicesServerPort)
+		BKSDisplayBrightnessTransactionCreate = (BKSDisplayBrightnessTransactionRef (*)(CFAllocatorRef))dlsym(backBoardServices, "BKSDisplayBrightnessTransactionCreate");
+		if (!BKSDisplayBrightnessTransactionCreate)
 		{
-			NSLog(@"AutoBrightness: Failed to get BKSDisplayServicesServerPort!");
+			NSLog(@"AutoBrightness: Failed to get BKSDisplayBrightnessTransactionCreate!");
 			return 1;
 		}
 
-		BKSDisplayBrightnessSet = (void (*)(int,float))dlsym(backBoardServices, "BKSDisplayBrightnessSet");
+		BKSDisplayBrightnessSet = (void (*)(float))dlsym(backBoardServices, "BKSDisplayBrightnessSet");
 		if (!BKSDisplayBrightnessSet)
 		{
 			NSLog(@"AutoBrightness: Failed to get BKSDisplayBrightnessSet!");
