@@ -6,9 +6,13 @@
 #import <notify.h>
 
 //#define AB_LOG 1
+#define useBackBoardServices (kCFCoreFoundationVersionNumber >= 1140.10) //iOS8
 
 static int (*SBSSpringBoardServerPort)() = 0;
 static void (*SBSetCurrentBacklightLevel)(int _port, float level) = 0;
+
+static int (*BKSDisplayServicesServerPort)() = 0;
+static void (*BKSDisplayBrightnessSet)(int port, float value) = 0;
 
 IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
 int IOHIDEventSystemClientSetMatching(IOHIDEventSystemClientRef client, CFDictionaryRef match);
@@ -31,7 +35,7 @@ static void setBrightness(float br, bool skipDeltaCheck)
 	float diff = fabsf(s_lastBr-br);
 	if (skipDeltaCheck || diff > thres)
 	{
-		int port = SBSSpringBoardServerPort();
+		int port = useBackBoardServices ? BKSDisplayServicesServerPort() : SBSSpringBoardServerPort();
 		int numSteps = diff/0.002f; // how big a step will be
 		if (numSteps == 0) 
 			numSteps = 1;
@@ -45,7 +49,10 @@ static void setBrightness(float br, bool skipDeltaCheck)
 		float step = (br-s_lastBr)/numSteps;
 		for (int i=1; i<=numSteps; i++)
 		{
-			SBSetCurrentBacklightLevel( port, s_lastBr + step*i);
+			if (useBackBoardServices)
+				BKSDisplayBrightnessSet( port, s_lastBr + step*i);
+			else
+				SBSetCurrentBacklightLevel( port, s_lastBr + step*i);
 			usleep(500000.0f/numSteps);
 		}
 		s_lastBr = br;
@@ -153,25 +160,51 @@ void reloadPrefs()
 int main()
 {
 	// ------- get functs ----------------
-	void *uikit = dlopen("/System/Library/Framework/UIKit.framework/UIKit", RTLD_LAZY);
-	if (!uikit)
+	if (useBackBoardServices)
 	{
-		NSLog(@"AutoBrightness: Failed to open UIKit framework!");
-		return 1;
-	}
+		void *backBoardServices = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_LAZY);
+		if (!backBoardServices)
+		{
+			NSLog(@"AutoBrightness: Failed to open BackBoardServices framework!");
+			return 1;
+		}
 
-	SBSSpringBoardServerPort = (int (*)())dlsym(uikit, "SBSSpringBoardServerPort");
-	if (!SBSSpringBoardServerPort) 
-	{
-		NSLog(@"AutoBrightness: Failed to get SBSSpringBoardServerPort!");
-		return 1;
-	}
+		BKSDisplayServicesServerPort = (int (*)())dlsym(backBoardServices, "BKSDisplayServicesServerPort");
+		if (!BKSDisplayServicesServerPort)
+		{
+			NSLog(@"AutoBrightness: Failed to get BKSDisplayServicesServerPort!");
+			return 1;
+		}
 
-	SBSetCurrentBacklightLevel = (void (*)(int,float))dlsym(uikit, "SBSetCurrentBacklightLevel");
-	if (!SBSSpringBoardServerPort)
+		BKSDisplayBrightnessSet = (void (*)(int,float))dlsym(backBoardServices, "BKSDisplayBrightnessSet");
+		if (!BKSDisplayBrightnessSet)
+		{
+			NSLog(@"AutoBrightness: Failed to get BKSDisplayBrightnessSet!");
+			return 1;
+		}
+	}
+	else
 	{
-		NSLog(@"AutoBrightness: Failed to get SBSetCurrentBacklightLevel!");
-		return 1;
+		void *uikit = dlopen("/System/Library/Framework/UIKit.framework/UIKit", RTLD_LAZY);
+		if (!uikit)
+		{
+			NSLog(@"AutoBrightness: Failed to open UIKit framework!");
+			return 1;
+		}
+
+		SBSSpringBoardServerPort = (int (*)())dlsym(uikit, "SBSSpringBoardServerPort");
+		if (!SBSSpringBoardServerPort)
+		{
+			NSLog(@"AutoBrightness: Failed to get SBSSpringBoardServerPort!");
+			return 1;
+		}
+
+		SBSetCurrentBacklightLevel = (void (*)(int,float))dlsym(uikit, "SBSetCurrentBacklightLevel");
+		if (!SBSSpringBoardServerPort)
+		{
+			NSLog(@"AutoBrightness: Failed to get SBSetCurrentBacklightLevel!");
+			return 1;
+		}
 	}
 
     // ------- get ALS service -----------
