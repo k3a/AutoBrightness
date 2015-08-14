@@ -5,7 +5,7 @@
 #include <dlfcn.h>
 #import <notify.h>
 
-#define DEBUG 1
+// #define DEBUG 1
 #ifdef DEBUG
 #define AB_LOG(fmt, ...) NSLog((@"AutoBrightness: "  fmt), ##__VA_ARGS__)
 #else
