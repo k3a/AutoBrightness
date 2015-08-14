@@ -5,7 +5,14 @@
 #include <dlfcn.h>
 #import <notify.h>
 
-//#define AB_LOG 1
+#define DEBUG 1
+#ifdef DEBUG
+#define AB_LOG(fmt, ...) NSLog((@"AutoBrightness: "  fmt), ##__VA_ARGS__)
+#else
+#define AB_LOG(fmt, ...)
+// #define NSLog(fmt, ...)
+#endif
+
 #define useBackBoardServices (kCFCoreFoundationVersionNumber >= 1140.10) //iOS8
 
 static int (*SBSSpringBoardServerPort)() = 0;
@@ -14,6 +21,8 @@ static void (*SBSetCurrentBacklightLevel)(int _port, float level) = 0;
 typedef struct BKSDisplayBrightnessTransaction *BKSDisplayBrightnessTransactionRef;
 static BKSDisplayBrightnessTransactionRef (*BKSDisplayBrightnessTransactionCreate)(CFAllocatorRef allocator) = 0;
 static void (*BKSDisplayBrightnessSet)(float value) = 0;
+static float (*BKSDisplayBrightnessGetCurrent)() = 0;
+static void (*BKSDisplayBrightnessSetAutoBrightnessEnabled)(BOOL enabled) = 0;
 
 IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
 int IOHIDEventSystemClientSetMatching(IOHIDEventSystemClientRef client, CFDictionaryRef match);
@@ -25,27 +34,38 @@ int IOHIDServiceClientSetProperty(IOHIDServiceClientRef, CFStringRef, CFNumberRe
 static IOHIDEventSystemClientRef s_hidSysC; // event system client
 static bool s_running = false; // whether we are scheduled and running
 
-static float s_lastBr = 0; // latest brightness value set
+static float s_lastBr = 0.0; // latest brightness value set
 static bool s_screenBlanketed = false;
 static bool s_resetLux = false; // when true, imemdiately set the new lux value
+static bool s_isSettingBrightness = false;
+static float s_threshold = -0.001;
+static float s_screenOffBrightness = -0.01;
+static float s_setInterval = 4;
+static float s_ambientSensorInterval = 0.5;
+static int s_luxMax = 5000;
+static float s_luxOffset = 0;
+static int s_maxBrightnessSteps = 20;
 
 // sets the physical brightness as fast as possible (using SpringBoard services)
-static void setBrightness(float br, bool skipDeltaCheck)
+static void setBrightness(float br, bool skipDeltaCheck, bool instant)
 {
-	float thres = 0.002f+0.1f*br*br;
+	if (!s_running || s_isSettingBrightness) {
+		return; //to keep it from running when you first turn on the screen and it is disabled??
+	}
+
+	float thres = s_threshold < 0 ? 0.002f+0.1f*br*br : s_threshold;
 	float diff = fabsf(s_lastBr-br);
 	if (skipDeltaCheck || diff > thres)
 	{
+		s_isSettingBrightness = true;
 		int port = useBackBoardServices ? 1 : SBSSpringBoardServerPort();
-		int numSteps = diff/0.002f; // how big a step will be
+		int numSteps = instant ? 1 : diff/0.002f; // how big a step will be
 		if (numSteps == 0)
 			numSteps = 1;
-		else if (numSteps > 20)
-			numSteps = 20;
+		else if (numSteps > s_maxBrightnessSteps)
+			numSteps = s_maxBrightnessSteps;
 
-#ifdef AB_LOG
-		NSLog(@"AutoBrightness: setting brightness %f | DIFF %f | THRES %f | STEPS %d", br, diff, thres, numSteps);
-#endif
+		AB_LOG(@"setting brightness YES,			BR %f | DIFF %f | THRES %f | STEPS %d", br, diff, thres, numSteps);
 
 		float step = (br-s_lastBr)/numSteps;
 		if (useBackBoardServices)
@@ -67,6 +87,7 @@ static void setBrightness(float br, bool skipDeltaCheck)
 			}
 		}
 		s_lastBr = br;
+		s_isSettingBrightness = false;
 		//NSLog(@"BR: %f (SET)", br);
 	}
 	else
@@ -91,22 +112,20 @@ void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue, IOHIDE
 		if (lastTime == 0 || s_resetLux)
 		{
 			// first time this function is called - set to "now" values
-			lastTime = tim - 10;
+			lastTime = tim - 2.5 * s_setInterval;
 			luxTotal = luxNow;
 			luxNum = 1;
 		}
-#ifdef AB_LOG
-		NSLog(@"AutoBrightness: %d got new data - lux now %d", tim, luxNow);
-#endif
+
+		AB_LOG(@"got new data at %ld - lux now %d", tim, luxNow);
 
 		// skip if less than x-seconds since the last event
-		if (tim - lastTime < 4 && !s_resetLux)
+		if (tim - lastTime < s_setInterval && !s_resetLux)
 		{
 			luxTotal += luxNow;
 			luxNum++;
 			return;
 		}
-		lastTime = tim;
 		s_resetLux = false;
 
 		// compute filtered lux
@@ -116,7 +135,7 @@ void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue, IOHIDE
 
 		// comute current brightness from lux value
 		//float br = sqrtf(luxValue)/50.0f;
-		float br = 0.199311f*logf(0.03f*luxValue+1.0f);
+		float br = 0.199311f * logf((5000.0f / s_luxMax) * 0.03f * luxValue + 1.0f + s_luxOffset);
 		if (br>1) br = 1;
 		//NSLog(@"LUX: %d -> %.4f", luxValue, br);
 
@@ -128,11 +147,9 @@ void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue, IOHIDE
 		//br = (oldBr*2+br)/3.0f;
 
 		// set
-#ifdef AB_LOG
-		NSLog(@"AutoBrightness: %d timeout %d - computed %f brightness", tim, tim - lastTime, br);
-#endif
-		setBrightness(br, s_resetLux);
-
+		AB_LOG(@"check brightness, time diff %4ld | BR %f | MAXLUX %6d | OFFSET %7.3f | LUX %d", tim - lastTime, br, s_luxMax, s_luxOffset, luxValue);
+		lastTime = tim;
+		setBrightness(br, s_resetLux, false);
 		// store...
 		//oldBr = br;
 	}
@@ -140,31 +157,102 @@ void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue, IOHIDE
 
 void reloadPrefs()
 {
-#ifdef AB_LOG
-	NSLog(@"AB: reloading prefs");
-#endif
+	AB_LOG(@"reloading prefs");
 
 	NSDictionary* prefs = [NSDictionary dictionaryWithContentsOfFile:@"/var/mobile/Library/Preferences/me.k3a.ab.plist"];
 	bool enabled = true; // enabled by default
+	s_threshold = -0.001;
+	s_screenOffBrightness = -0.01;
+	s_setInterval = 4;
+	s_ambientSensorInterval = 0.5;
+	s_luxMax = 5000;
+	s_luxOffset = 0;
+	s_maxBrightnessSteps = 20;
 
 	if (prefs)
 	{
 		enabled = [[prefs objectForKey:@"enabled"] boolValue];
+
+		if ([prefs objectForKey:@"setInterval"] != nil)
+		{
+			s_setInterval = [[prefs objectForKey:@"setInterval"] floatValue];
+		}
+
+		if ([prefs objectForKey:@"threshold"] != nil)
+		{
+			s_threshold = [[prefs objectForKey:@"threshold"] floatValue];
+		}
+
+		if ([prefs objectForKey:@"screenOffBrightness"] != nil)
+		{
+			s_screenOffBrightness = [[prefs objectForKey:@"screenOffBrightness"] floatValue];
+		}
+
+		if ([prefs objectForKey:@"ambientSensorInterval"] != nil)
+		{
+			s_ambientSensorInterval = [[prefs objectForKey:@"ambientSensorInterval"] floatValue];
+		}
+
+		if ([prefs objectForKey:@"luxMax"] != nil) {
+			s_luxMax = [[prefs objectForKey:@"luxMax"] intValue];
+		}
+
+		if ([prefs objectForKey:@"luxOffset"] != nil)
+		{
+			s_luxOffset = [[prefs objectForKey:@"luxOffset"] floatValue];
+		}
+
+		if ([prefs objectForKey:@"maxBrightnessSteps"] != nil)
+		{
+			s_maxBrightnessSteps = [[prefs objectForKey:@"maxBrightnessSteps"] intValue];
+		}
 	}
+	else
+	{
+		prefs = [NSDictionary dictionaryWithObjectsAndKeys:
+				[NSNumber numberWithBool:YES], @"enabled",
+				[NSNumber numberWithFloat:s_threshold], @"threshold",
+				[NSNumber numberWithFloat:s_screenOffBrightness], @"screenOffBrightness",
+				[NSNumber numberWithFloat:s_setInterval], @"setInterval",
+				[NSNumber numberWithFloat:s_ambientSensorInterval], @"ambientSensorInterval",
+				[NSNumber numberWithInteger:s_luxMax], @"luxMax",
+				[NSNumber numberWithFloat:s_luxOffset], @"luxOffset",
+				[NSNumber numberWithInteger:s_maxBrightnessSteps], @"maxBrightnessSteps",
+				nil];
+		[prefs writeToFile:@"/var/mobile/Library/Preferences/me.k3a.ab.plist" atomically:YES];
+	}
+
+	if (s_ambientSensorInterval < 0.25) s_ambientSensorInterval = 0.25;
+	if (s_setInterval < s_ambientSensorInterval) s_setInterval = s_ambientSensorInterval;
+	if (s_maxBrightnessSteps < 1) s_maxBrightnessSteps = 1;
+	if (s_maxBrightnessSteps > 200) s_maxBrightnessSteps = 200;
+	if (s_screenOffBrightness > 1) s_screenOffBrightness = 1;
+	if (s_luxMax < 100) s_luxMax = 100;
+	if (s_luxMax > 5000) s_luxMax = 5000;
+	if (s_luxOffset < 0) s_luxOffset = 0;
+	if (s_luxOffset > 10) s_luxOffset = 10;
+	if (s_threshold > 0.1) s_threshold = 0.1;
 
 	if (!s_running && enabled) // enable!
 	{
+		s_running = true;
+		s_resetLux = true;
+		if (useBackBoardServices)
+		{
+			s_lastBr = BKSDisplayBrightnessGetCurrent();
+			BKSDisplayBrightnessSetAutoBrightnessEnabled(NO);
+		}
+
 		IOHIDEventSystemClientScheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 		IOHIDEventSystemClientRegisterEventCallback(s_hidSysC, handle_event1, NULL, NULL);
-		s_running = true;
-		NSLog(@"AB: enabled");
+		NSLog(@"AutoBrightness: enabled, interval = %0.2f, s_threshold = %0.4f", s_setInterval, s_threshold);
 	}
 	else if (s_running && !enabled) // disable!
 	{
 		IOHIDEventSystemClientUnscheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 		IOHIDEventSystemClientUnregisterEventCallback(s_hidSysC);
 		s_running = false;
-		NSLog(@"AB: disabled");
+		NSLog(@"AutoBrightness: disabled");
 	}
 }
 
@@ -191,6 +279,20 @@ int main()
 		if (!BKSDisplayBrightnessSet)
 		{
 			NSLog(@"AutoBrightness: Failed to get BKSDisplayBrightnessSet!");
+			return 1;
+		}
+
+		BKSDisplayBrightnessGetCurrent = (float (*)())dlsym(backBoardServices, "BKSDisplayBrightnessGetCurrent");
+		if (!BKSDisplayBrightnessGetCurrent)
+		{
+			NSLog(@"AutoBrightness: Failed to get BKSDisplayBrightnessGetCurrent!");
+			return 1;
+		}
+
+		BKSDisplayBrightnessSetAutoBrightnessEnabled = (void (*)(BOOL))dlsym(backBoardServices, "BKSDisplayBrightnessSetAutoBrightnessEnabled");
+		if (!BKSDisplayBrightnessSetAutoBrightnessEnabled)
+		{
+			NSLog(@"AutoBrightness: Failed to get BKSDisplayBrightnessSetAutoBrightnessEnabled!");
 			return 1;
 		}
 	}
@@ -247,7 +349,7 @@ int main()
 
 	IOHIDServiceClientRef alssc = (IOHIDServiceClientRef)CFArrayGetValueAtIndex(matchingsrvs, 0);
 
-	int ri = 500000;//1000;
+	int ri = s_ambientSensorInterval * 1000000;
 	CFNumberRef interval = CFNumberCreate(CFAllocatorGetDefault(), kCFNumberIntType, &ri);
 	IOHIDServiceClientSetProperty(alssc,CFSTR("ReportInterval"),interval);
 
@@ -266,10 +368,13 @@ int main()
 											  uint64_t state;
 											  int result = notify_get_state(t, &state);
 											  s_screenBlanketed = state != 0;
-											  if (!s_screenBlanketed)
+											  if (s_running && !s_screenBlanketed)
 											  {
-												  setBrightness(s_lastBr, true);
 												  s_resetLux = true;
+											  }
+											  else if (s_running && s_screenOffBrightness >= 0)
+											  {
+												  setBrightness(s_screenOffBrightness, true, true);
 											  }
 											  //NSLog(@"AutoBrightness: lock state change = %llu", state);
 											  if (result != NOTIFY_STATUS_OK) {
