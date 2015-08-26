@@ -26,20 +26,24 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 {
 	if (IOHIDEventGetType(event)==kIOHIDEventTypeAmbientLightSensor) {
 		int luxNow = IOHIDEventGetIntegerValue(event, (IOHIDEventField)kIOHIDEventFieldAmbientLightSensorLevel); // lux Event Field
-		monitorCell.textLabel.text = [NSString stringWithFormat:@"Monitor: Lux = %4d, br = %0.3f", luxNow, BKSDisplayBrightnessGetCurrent()];
+		if (useBackBoardServices) {
+			monitorCell.textLabel.text = [NSString stringWithFormat:@"Monitor: Lux = %4d, br = %0.3f", luxNow, BKSDisplayBrightnessGetCurrent()];
+		} else {
+			monitorCell.textLabel.text = [NSString stringWithFormat:@"Monitor: Lux = %d", luxNow];
+		}
 	}
 }
 
 @interface AutoBrightnessListController: PSListController {
 }
 - (void)ambientPreview;
+- (void)shutdownPreview;
+- (void)applicationWillResignActive:(NSNotification *)notification;
 @end
 
 @implementation AutoBrightnessListController
 - (void)ambientPreview
 {
-	if (!useBackBoardServices) return;
-
 	if (ambientPreviewState == 0) {
 		int pv1 = 0xff00;
 		int pv2 = 4;
@@ -92,6 +96,32 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 	return self;
 }
 
+- (void)viewDidLoad
+{
+	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationWillResignActive:) name:UIApplicationWillResignActiveNotification object:nil];
+
+	[super viewDidLoad];
+}
+
+- (void)shutdownPreview
+{
+	if (ambientPreviewState == 1) {
+		IOHIDEventSystemClientUnscheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+		IOHIDEventSystemClientUnregisterEventCallback(s_hidSysC);
+	}
+
+	if (ambientPreviewState != 0) {
+		CFRelease(s_hidSysC);
+		monitorCell.textLabel.text = @"Monitor";
+		ambientPreviewState = 0;
+	}
+}
+
+- (void)applicationWillResignActive:(NSNotification *)notification
+{
+	[self shutdownPreview];
+}
+
 -(void)viewWillAppear:(BOOL)animated
 {
 	_settings = ([NSMutableDictionary dictionaryWithContentsOfFile:_plistfile] ?: [NSMutableDictionary dictionary]);
@@ -101,18 +131,7 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 
 -(void)viewWillDisappear:(BOOL)animated
 {
-	if (useBackBoardServices) {
-		if (ambientPreviewState == 1) {
-			IOHIDEventSystemClientUnscheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
-			IOHIDEventSystemClientUnregisterEventCallback(s_hidSysC);
-		}
-
-		if (ambientPreviewState != 0) {
-			CFRelease(s_hidSysC);
-			monitorCell.textLabel.text = @"Monitor";
-			ambientPreviewState = 0;
-		}
-	}
+	[self shutdownPreview];
 
 	[super viewWillDisappear:animated];
 }
