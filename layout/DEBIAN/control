@@ -1,6 +1,6 @@
 Package: me.k3a.ab
 Name: AutoBrightness
-Depends: firmware (>= 5.0)
+Depends: preferenceloader, firmware (>= 5.0)
 Conflicts: org.thebigboss.swipebright
 Version: 1.2.0
 Architecture: iphoneos-arm
