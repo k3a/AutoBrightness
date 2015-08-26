@@ -1,0 +1,10 @@
+{
+	entry = {
+	bundle = AutoBrightness;
+	cell = PSLinkCell;
+	detail = AutoBrightnessListController;
+	icon = AutoBrightness.png;
+	isController = 1;
+	label = "Auto Brightness";
+	};
+}
