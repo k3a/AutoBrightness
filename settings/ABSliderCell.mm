@@ -129,7 +129,7 @@
 						 [self.specifier propertyForKey:@"type"] ?: @"",
 						 value.text];
 
-	UIAlertView *alert = [[UIAlertView alloc] initWithTitle:nil
+	alert = [[UIAlertView alloc] initWithTitle:nil
 													message:message
 												   delegate:self
 										  cancelButtonTitle:@"Cancel"
@@ -150,6 +150,18 @@
 	}
 
 	[alert show];
+}
+
+-(void)enterNegativeSign
+{
+	if (alert) {
+		NSString *text = [alert textFieldAtIndex:0].text;
+		if ([text hasPrefix:@"-"]) {
+			[alert textFieldAtIndex:0].text = [text substringFromIndex:1];
+		} else {
+			[alert textFieldAtIndex:0].text = [NSString stringWithFormat:@"-%@", text];
+		}
+	}
 }
 
 -(void) alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex
