@@ -20,6 +20,7 @@ extern "C" {
 
 static IOHIDEventSystemClientRef s_hidSysC;
 static int ambientPreviewState = 0;
+static PSListController *controller;
 static UITableViewCell *monitorCell;
 
 static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue, IOHIDEventRef event)
@@ -27,9 +28,11 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 	if (IOHIDEventGetType(event)==kIOHIDEventTypeAmbientLightSensor) {
 		int luxNow = IOHIDEventGetIntegerValue(event, (IOHIDEventField)kIOHIDEventFieldAmbientLightSensorLevel); // lux Event Field
 		if (useBackBoardServices) {
-			monitorCell.textLabel.text = [NSString stringWithFormat:@"Monitor: Lux = %4d, br = %0.3f", luxNow, BKSDisplayBrightnessGetCurrent()];
+			controller.title = [NSString stringWithFormat:@"Lux = %4d, br = %0.3f", luxNow, BKSDisplayBrightnessGetCurrent()];
+
 		} else {
-			monitorCell.textLabel.text = [NSString stringWithFormat:@"Monitor: Lux = %d", luxNow];
+			controller.title = [NSString stringWithFormat:@"Monitor: Lux = %d", luxNow];
+
 		}
 	}
 }
@@ -69,19 +72,23 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 			CFNumberRef interval = CFNumberCreate(CFAllocatorGetDefault(), kCFNumberIntType, &ri);
 			IOHIDServiceClientSetProperty(alssc,CFSTR("ReportInterval"),interval);
 
+			controller = self;
 			IOHIDEventSystemClientScheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 			IOHIDEventSystemClientRegisterEventCallback(s_hidSysC, handle_event1, NULL, NULL);
 
 			ambientPreviewState = 1;
+			monitorCell.textLabel.text = @"Disable Monitor";
 		}
 	} else if (ambientPreviewState == 1) {
-		monitorCell.textLabel.text = @"Monitor";
+		self.title = @"Auto Brightness";
+		monitorCell.textLabel.text = @"Enable Monitor";
 		IOHIDEventSystemClientUnscheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 		IOHIDEventSystemClientUnregisterEventCallback(s_hidSysC);
 		ambientPreviewState = 2;
 	} else {
 		IOHIDEventSystemClientScheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 		IOHIDEventSystemClientRegisterEventCallback(s_hidSysC, handle_event1, NULL, NULL);
+		monitorCell.textLabel.text = @"Disable Monitor";
 
 		ambientPreviewState = 1;
 	}
@@ -112,7 +119,8 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 
 	if (ambientPreviewState != 0) {
 		CFRelease(s_hidSysC);
-		monitorCell.textLabel.text = @"Monitor";
+		self.title = @"Auto Brightness";
+		monitorCell.textLabel.text = @"Enable Monitor";
 		ambientPreviewState = 0;
 	}
 }

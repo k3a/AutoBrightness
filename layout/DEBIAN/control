@@ -2,7 +2,7 @@ Package: me.k3a.ab
 Name: AutoBrightness
 Depends: preferenceloader, firmware (>= 5.0)
 Conflicts: org.thebigboss.swipebright
-Version: 1.2.0
+Version: 1.3.0
 Architecture: iphoneos-arm
 Description: Automatically sets the brightness according to ambient light conditions. In contrast to iOS default autobrightness, this one also decreases the brightness when ambient light is decreased. Please disable iOS autobrightness after installing this tweak. Free for those who already bought an Apple device. Changelog: http://k3a.me/chlogs/ab.htm. Note that I may not be able to respond to every email.
 Maintainer: K3A

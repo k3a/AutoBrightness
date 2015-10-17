@@ -17,7 +17,7 @@
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>Monitor</string>
+			<string>Enable Monitor</string>
 			<key>action</key>
 			<string>ambientPreview</string>
 			<key>id</key>
