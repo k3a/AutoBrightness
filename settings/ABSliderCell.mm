@@ -43,7 +43,7 @@
 		_row = [specifier propertyForKey:@"row"] ? [[specifier propertyForKey:@"row"] intValue] : -1;
 
 		CGRect titleFrame = CGRectMake(15, 10, self.frame.size.width - 120, 20);
-		CGRect valueFrame = CGRectMake(self.frame.size.width - 75, 3, 60, 30);
+		CGRect valueFrame = CGRectMake(self.frame.size.width - 100, 3, 85, 30);
 		CGRect sliderFrame = CGRectMake(15, 28, self.frame.size.width - 30, 40);
 
 		title = [[UILabel alloc] initWithFrame:titleFrame];
