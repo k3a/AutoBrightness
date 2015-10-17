@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#include <dlfcn.h>
 #include <IOKit/hid/IOHIDEventSystem.h>
 #include <IOKit/hid/IOHIDEventSystemClient.h>
 
@@ -9,8 +10,8 @@
 #define _plistfile @"/private/var/mobile/Library/Preferences/me.k3a.ab.plist"
 static NSMutableDictionary *_settings;
 
+static float (*BKSDisplayBrightnessGetCurrent)() = 0;
 extern "C" {
-	float BKSDisplayBrightnessGetCurrent();
 	IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
 	int IOHIDEventSystemClientSetMatching(IOHIDEventSystemClientRef client, CFDictionaryRef match);
 	CFArrayRef IOHIDEventSystemClientCopyServices(IOHIDEventSystemClientRef, int);
@@ -47,6 +48,14 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 @implementation AutoBrightnessListController
 - (void)ambientPreview
 {
+	if (useBackBoardServices && !BKSDisplayBrightnessGetCurrent) {
+		void *backBoardServices = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_LAZY);
+		if (backBoardServices) {
+			BKSDisplayBrightnessGetCurrent = (float (*)())dlsym(backBoardServices, "BKSDisplayBrightnessGetCurrent");
+			dlclose(backBoardServices);
+		}
+	}
+
 	if (ambientPreviewState == 0) {
 		int pv1 = 0xff00;
 		int pv2 = 4;
