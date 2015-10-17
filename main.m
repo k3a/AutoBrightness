@@ -228,8 +228,8 @@ void reloadPrefs()
 	if (s_maxBrightnessSteps > 200) s_maxBrightnessSteps = 200;
 	if (s_screenOffBrightness > 1) s_screenOffBrightness = 1;
 	if (s_luxMax < 100) s_luxMax = 100;
-	if (s_luxMax > 5000) s_luxMax = 5000;
-	if (s_luxOffset < 0) s_luxOffset = 0;
+	if (s_luxMax > 100000) s_luxMax = 100000;
+	if (s_luxOffset < -0.5) s_luxOffset = -0.5;
 	if (s_luxOffset > 10) s_luxOffset = 10;
 	if (s_threshold > 0.1) s_threshold = 0.1;
 
