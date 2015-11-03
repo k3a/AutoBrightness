@@ -17,7 +17,7 @@
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>Monitor</string>
+			<string>Enable Monitor</string>
 			<key>action</key>
 			<string>ambientPreview</string>
 			<key>id</key>
@@ -152,7 +152,7 @@
 			<key>min</key>
 			<integer>100</integer>
 			<key>max</key>
-			<integer>5000</integer>
+			<integer>100000</integer>
 			<key>step</key>
 			<integer>1</integer>
 		</dict>
@@ -177,7 +177,7 @@
 			<key>default</key>
 			<real>0</real>
 			<key>min</key>
-			<real>0</real>
+			<real>-0.5</real>
 			<key>max</key>
 			<real>10</real>
 			<key>step</key>

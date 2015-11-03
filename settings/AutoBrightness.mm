@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#include <dlfcn.h>
 #include <IOKit/hid/IOHIDEventSystem.h>
 #include <IOKit/hid/IOHIDEventSystemClient.h>
 
@@ -9,8 +10,8 @@
 #define _plistfile @"/private/var/mobile/Library/Preferences/me.k3a.ab.plist"
 static NSMutableDictionary *_settings;
 
+static float (*BKSDisplayBrightnessGetCurrent)() = 0;
 extern "C" {
-	float BKSDisplayBrightnessGetCurrent();
 	IOHIDEventSystemClientRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
 	int IOHIDEventSystemClientSetMatching(IOHIDEventSystemClientRef client, CFDictionaryRef match);
 	CFArrayRef IOHIDEventSystemClientCopyServices(IOHIDEventSystemClientRef, int);
@@ -20,6 +21,7 @@ extern "C" {
 
 static IOHIDEventSystemClientRef s_hidSysC;
 static int ambientPreviewState = 0;
+static PSListController *controller;
 static UITableViewCell *monitorCell;
 
 static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue, IOHIDEventRef event)
@@ -27,9 +29,11 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 	if (IOHIDEventGetType(event)==kIOHIDEventTypeAmbientLightSensor) {
 		int luxNow = IOHIDEventGetIntegerValue(event, (IOHIDEventField)kIOHIDEventFieldAmbientLightSensorLevel); // lux Event Field
 		if (useBackBoardServices) {
-			monitorCell.textLabel.text = [NSString stringWithFormat:@"Monitor: Lux = %4d, br = %0.3f", luxNow, BKSDisplayBrightnessGetCurrent()];
+			controller.title = [NSString stringWithFormat:@"Lux = %4d, br = %0.3f", luxNow, BKSDisplayBrightnessGetCurrent()];
+
 		} else {
-			monitorCell.textLabel.text = [NSString stringWithFormat:@"Monitor: Lux = %d", luxNow];
+			controller.title = [NSString stringWithFormat:@"Monitor: Lux = %d", luxNow];
+
 		}
 	}
 }
@@ -44,6 +48,14 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 @implementation AutoBrightnessListController
 - (void)ambientPreview
 {
+	if (useBackBoardServices && !BKSDisplayBrightnessGetCurrent) {
+		void *backBoardServices = dlopen("/System/Library/PrivateFrameworks/BackBoardServices.framework/BackBoardServices", RTLD_LAZY);
+		if (backBoardServices) {
+			BKSDisplayBrightnessGetCurrent = (float (*)())dlsym(backBoardServices, "BKSDisplayBrightnessGetCurrent");
+			dlclose(backBoardServices);
+		}
+	}
+
 	if (ambientPreviewState == 0) {
 		int pv1 = 0xff00;
 		int pv2 = 4;
@@ -69,19 +81,23 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 			CFNumberRef interval = CFNumberCreate(CFAllocatorGetDefault(), kCFNumberIntType, &ri);
 			IOHIDServiceClientSetProperty(alssc,CFSTR("ReportInterval"),interval);
 
+			controller = self;
 			IOHIDEventSystemClientScheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 			IOHIDEventSystemClientRegisterEventCallback(s_hidSysC, handle_event1, NULL, NULL);
 
 			ambientPreviewState = 1;
+			monitorCell.textLabel.text = @"Disable Monitor";
 		}
 	} else if (ambientPreviewState == 1) {
-		monitorCell.textLabel.text = @"Monitor";
+		self.title = @"Auto Brightness";
+		monitorCell.textLabel.text = @"Enable Monitor";
 		IOHIDEventSystemClientUnscheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 		IOHIDEventSystemClientUnregisterEventCallback(s_hidSysC);
 		ambientPreviewState = 2;
 	} else {
 		IOHIDEventSystemClientScheduleWithRunLoop(s_hidSysC, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 		IOHIDEventSystemClientRegisterEventCallback(s_hidSysC, handle_event1, NULL, NULL);
+		monitorCell.textLabel.text = @"Disable Monitor";
 
 		ambientPreviewState = 1;
 	}
@@ -112,7 +128,8 @@ static void handle_event1 (void* target, void* refcon, IOHIDEventQueueRef queue,
 
 	if (ambientPreviewState != 0) {
 		CFRelease(s_hidSysC);
-		monitorCell.textLabel.text = @"Monitor";
+		self.title = @"Auto Brightness";
+		monitorCell.textLabel.text = @"Enable Monitor";
 		ambientPreviewState = 0;
 	}
 }

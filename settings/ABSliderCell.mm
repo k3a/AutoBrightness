@@ -43,7 +43,7 @@
 		_row = [specifier propertyForKey:@"row"] ? [[specifier propertyForKey:@"row"] intValue] : -1;
 
 		CGRect titleFrame = CGRectMake(15, 10, self.frame.size.width - 120, 20);
-		CGRect valueFrame = CGRectMake(self.frame.size.width - 75, 3, 60, 30);
+		CGRect valueFrame = CGRectMake(self.frame.size.width - 100, 3, 85, 30);
 		CGRect sliderFrame = CGRectMake(15, 28, self.frame.size.width - 30, 40);
 
 		title = [[UILabel alloc] initWithFrame:titleFrame];
@@ -129,7 +129,7 @@
 						 [self.specifier propertyForKey:@"type"] ?: @"",
 						 value.text];
 
-	UIAlertView *alert = [[UIAlertView alloc] initWithTitle:nil
+	alert = [[UIAlertView alloc] initWithTitle:nil
 													message:message
 												   delegate:self
 										  cancelButtonTitle:@"Cancel"
@@ -150,6 +150,18 @@
 	}
 
 	[alert show];
+}
+
+-(void)enterNegativeSign
+{
+	if (alert) {
+		NSString *text = [alert textFieldAtIndex:0].text;
+		if ([text hasPrefix:@"-"]) {
+			[alert textFieldAtIndex:0].text = [text substringFromIndex:1];
+		} else {
+			[alert textFieldAtIndex:0].text = [NSString stringWithFormat:@"-%@", text];
+		}
+	}
 }
 
 -(void) alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex

@@ -1,6 +1,7 @@
 #import <Preferences/PSTableCell.h>
 
 @interface ABSliderCell : PSTableCell {
+	UIAlertView *alert;
 	UILabel *title;
 	UITextField *value;
 	UISlider *slider;
